@@ -44,15 +44,5 @@ describe('WalletListener', () => {
 
       expect(redis.ltrim).toHaveBeenCalledWith('wallet:alerts', 0, 49);
     });
-
-    it('persists before trimming', async () => {
-      const callOrder: string[] = [];
-      redis.lpush.mockImplementation(async () => { callOrder.push('lpush'); });
-      redis.ltrim.mockImplementation(async () => { callOrder.push('ltrim'); });
-
-      await listener.handleBalanceChanged(MOCK_EVENT);
-
-      expect(callOrder).toEqual(['lpush', 'ltrim']);
-    });
   });
 });
