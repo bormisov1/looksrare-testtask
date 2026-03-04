@@ -1,26 +1,13 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TonClient } from '@ton/ton';
-import { Address } from '@ton/core';
+import { Address, Transaction } from '@ton/core';
+import { RpcThrottler } from '../../utils/rpc-throttler';
 
-/**
- * TON blockchain provider using @ton/ton.
- * Activated when NETWORK=ton in .env
- *
- * Docs: https://ton.org/docs / https://github.com/ton-org/ton
- *
- * Usage example (in WalletService):
- *   const addr = Address.parse(address)
- *   const balance = await this.ton.client.getBalance(addr)
- *   // returns bigint in nanoTON (1 TON = 10^9 nanoTON)
- *   // convert with: formatBalance(balance, 9)
- *
- * Re-exported Address so callers don't need a separate import:
- *   const addr = this.ton.parseAddress(address)
- */
 @Injectable()
 export class TonProvider implements OnModuleInit {
   private readonly logger = new Logger(TonProvider.name);
+  private throttler!: RpcThrottler;
 
   /** TonClient instance — available when NETWORK=ton. */
   client!: TonClient;
@@ -44,6 +31,7 @@ export class TonProvider implements OnModuleInit {
     );
     const apiKey = this.configService.get<string>('TON_API_KEY', '');
 
+    this.throttler = new RpcThrottler(apiKey ? 8 : 1);
     this.client = new TonClient({ endpoint, apiKey: apiKey || undefined });
     this.logger.log(`TON Provider initialized (${endpoint})`);
   }
@@ -55,5 +43,18 @@ export class TonProvider implements OnModuleInit {
 
   isTonNetwork(): boolean {
     return this.configService.get<string>('NETWORK', 'ethereum') === 'ton';
+  }
+
+  async getBalance(addr: Address): Promise<bigint> {
+    return this.throttler.execute(() => this.client.getBalance(addr));
+  }
+
+  async getTransactions(
+    addr: Address,
+    opts: { limit: number },
+  ): Promise<Transaction[]> {
+    return this.throttler.execute(() =>
+      this.client.getTransactions(addr, opts),
+    );
   }
 }

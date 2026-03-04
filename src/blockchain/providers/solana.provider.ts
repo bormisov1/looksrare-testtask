@@ -1,10 +1,17 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Connection } from '@solana/web3.js';
+import {
+  Connection,
+  PublicKey,
+  ConfirmedSignatureInfo,
+  ParsedTransactionWithMeta,
+} from '@solana/web3.js';
+import { RpcThrottler } from '../../utils/rpc-throttler';
 
 @Injectable()
 export class SolanaProvider implements OnModuleInit {
   private readonly logger = new Logger(SolanaProvider.name);
+  private readonly throttler = new RpcThrottler(3);
 
   /** @solana/web3.js Connection. Available when NETWORK=solana. */
   connection!: Connection;
@@ -33,5 +40,27 @@ export class SolanaProvider implements OnModuleInit {
 
   isSolanaNetwork(): boolean {
     return this.configService.get<string>('NETWORK', 'ethereum') === 'solana';
+  }
+
+  async getBalance(pk: PublicKey): Promise<number> {
+    return this.throttler.execute(() => this.connection.getBalance(pk));
+  }
+
+  async getSignaturesForAddress(
+    pk: PublicKey,
+    opts: { limit: number },
+  ): Promise<ConfirmedSignatureInfo[]> {
+    return this.throttler.execute(() =>
+      this.connection.getSignaturesForAddress(pk, opts),
+    );
+  }
+
+  async getParsedTransactions(
+    signatures: string[],
+  ): Promise<(ParsedTransactionWithMeta | null)[]> {
+    const fns = signatures.map(
+      (sig) => () => this.connection.getParsedTransaction(sig, { maxSupportedTransactionVersion: 0 }),
+    );
+    return this.throttler.executeChunked(fns, 3);
   }
 }

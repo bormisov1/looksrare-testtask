@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ethers } from 'ethers';
+import axios from 'axios';
+import { RpcThrottler } from '../../utils/rpc-throttler';
 
 export interface EvmNetworkConfig {
   rpcUrl: string;
@@ -48,6 +50,7 @@ const NETWORK_CONFIGS: Record<string, EvmNetworkConfig> = {
 @Injectable()
 export class EvmProvider implements OnModuleInit {
   private readonly logger = new Logger(EvmProvider.name);
+  private readonly throttler = new RpcThrottler(2);
 
   /** ethers.js JSON-RPC provider. Available when the selected network is EVM. */
   provider!: ethers.JsonRpcProvider;
@@ -94,5 +97,22 @@ export class EvmProvider implements OnModuleInit {
     return ['ethereum', 'bnb', 'polygon'].includes(
       this.configService.get<string>('NETWORK', 'ethereum'),
     );
+  }
+
+  async getBalance(address: string): Promise<bigint> {
+    return this.throttler.execute(() => this.provider.getBalance(address));
+  }
+
+  async explorerGet<T>(params: Record<string, unknown>): Promise<T> {
+    return this.throttler.execute(async () => {
+      const { data } = await axios.get<T>(this.config.explorerApiUrl, {
+        timeout: 10_000,
+        params: {
+          ...params,
+          apikey: this.explorerApiKey,
+        },
+      });
+      return data;
+    });
   }
 }
