@@ -15,6 +15,7 @@ import { EvmStrategy } from './strategies/evm.strategy';
 import { SolanaStrategy } from './strategies/solana.strategy';
 import { TonStrategy } from './strategies/ton.strategy';
 import { IsWalletAddressConstraint } from '../utils/validators/is-wallet-address.validator';
+import { ValidateAddressPipe } from './pipes/validate-address.pipe';
 
 @Module({
   imports: [ConfigModule, RedisModule, BlockchainModule],
@@ -23,6 +24,7 @@ import { IsWalletAddressConstraint } from '../utils/validators/is-wallet-address
     WalletService,
     WalletListener,
     IsWalletAddressConstraint,
+    ValidateAddressPipe,
     {
       provide: BLOCKCHAIN_STRATEGY,
       useFactory: (

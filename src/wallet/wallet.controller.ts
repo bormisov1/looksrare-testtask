@@ -18,6 +18,7 @@ import {
 import { WalletService } from './wallet.service';
 import { WatchWalletDto } from './dto/watch-wallet.dto';
 import { GetTransactionsDto } from './dto/get-transactions.dto';
+import { ValidateAddressPipe } from './pipes/validate-address.pipe';
 
 @ApiTags('wallet')
 @Controller()
@@ -29,7 +30,7 @@ export class WalletController {
   @ApiResponse({ status: 200, description: 'Balance returned (may be from cache)' })
   @ApiResponse({ status: 400, description: 'Invalid address' })
   @Get('wallet/:address/balance')
-  getBalance(@Param('address') address: string) {
+  getBalance(@Param('address', ValidateAddressPipe) address: string) {
     return this.walletService.getBalance(address);
   }
 
@@ -38,7 +39,7 @@ export class WalletController {
   @ApiResponse({ status: 200, description: 'Transaction list returned (may be from cache)' })
   @Get('wallet/:address/transactions')
   getTransactions(
-    @Param('address') address: string,
+    @Param('address', ValidateAddressPipe) address: string,
     @Query() query: GetTransactionsDto,
   ) {
     return this.walletService.getTransactions(address, query.limit);
@@ -48,7 +49,7 @@ export class WalletController {
   @ApiParam({ name: 'address', description: 'EVM (0x...) or Solana (base58) address' })
   @ApiResponse({ status: 200, description: 'Token balances returned' })
   @Get('wallet/:address/tokens')
-  getTokenBalances(@Param('address') address: string) {
+  getTokenBalances(@Param('address', ValidateAddressPipe) address: string) {
     return this.walletService.getTokenBalances(address);
   }
 
@@ -56,7 +57,7 @@ export class WalletController {
   @ApiParam({ name: 'address', description: 'EVM (0x...) or Solana (base58) address' })
   @ApiResponse({ status: 200, description: 'NFT list returned' })
   @Get('wallet/:address/nfts')
-  getNfts(@Param('address') address: string) {
+  getNfts(@Param('address', ValidateAddressPipe) address: string) {
     return this.walletService.getNfts(address);
   }
 
