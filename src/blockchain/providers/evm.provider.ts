@@ -6,6 +6,7 @@ export interface EvmNetworkConfig {
   rpcUrl: string;
   explorerApiUrl: string;
   explorerApiKeyEnv: string; // name of the env variable holding the API key
+  chainId: number;
   symbol: string;
   decimals: number;
 }
@@ -20,22 +21,25 @@ export interface EvmNetworkConfig {
 const NETWORK_CONFIGS: Record<string, EvmNetworkConfig> = {
   ethereum: {
     rpcUrl: 'https://eth.llamarpc.com',
-    explorerApiUrl: 'https://api.etherscan.io/api',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
     explorerApiKeyEnv: 'ETHERSCAN_API_KEY',
+    chainId: 1,
     symbol: 'ETH',
     decimals: 18,
   },
   bnb: {
     rpcUrl: 'https://bsc-dataseed.binance.org',
-    explorerApiUrl: 'https://api.bscscan.com/api',
-    explorerApiKeyEnv: 'BSCSCAN_API_KEY',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
+    explorerApiKeyEnv: 'ETHERSCAN_API_KEY',
+    chainId: 56,
     symbol: 'BNB',
     decimals: 18,
   },
   polygon: {
     rpcUrl: 'https://polygon-rpc.com',
-    explorerApiUrl: 'https://api.polygonscan.com/api',
-    explorerApiKeyEnv: 'POLYGONSCAN_API_KEY',
+    explorerApiUrl: 'https://api.etherscan.io/v2/api',
+    explorerApiKeyEnv: 'ETHERSCAN_API_KEY',
+    chainId: 137,
     symbol: 'MATIC',
     decimals: 18,
   },
@@ -46,15 +50,15 @@ export class EvmProvider implements OnModuleInit {
   private readonly logger = new Logger(EvmProvider.name);
 
   /** ethers.js JSON-RPC provider. Available when the selected network is EVM. */
-  provider: ethers.JsonRpcProvider;
+  provider!: ethers.JsonRpcProvider;
 
   /** Configuration for the active network */
-  config: EvmNetworkConfig;
+  config!: EvmNetworkConfig;
 
   /** Explorer API key (optional, required for transaction history) */
-  explorerApiKey: string;
+  explorerApiKey!: string;
 
-  network: string;
+  network!: string;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -71,6 +75,12 @@ export class EvmProvider implements OnModuleInit {
       this.config.explorerApiKeyEnv,
       '',
     );
+
+    if (!this.explorerApiKey) {
+      this.logger.warn(
+        `${this.config.explorerApiKeyEnv} is not set — transaction history will be unavailable`,
+      );
+    }
 
     const rpcUrl =
       this.configService.get<string>(`${this.network.toUpperCase()}_RPC_URL`) ||

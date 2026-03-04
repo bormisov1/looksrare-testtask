@@ -45,7 +45,7 @@ export class MoralisProvider implements OnModuleInit {
   private readonly logger = new Logger(MoralisProvider.name);
 
   /** EVM chain ID string for the active network (e.g. '0x1') */
-  evmChainId: string;
+  evmChainId!: string;
 
   /** Re-exported Moralis module for use in services */
   readonly sdk = Moralis;

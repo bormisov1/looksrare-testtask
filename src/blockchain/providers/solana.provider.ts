@@ -7,7 +7,7 @@ export class SolanaProvider implements OnModuleInit {
   private readonly logger = new Logger(SolanaProvider.name);
 
   /** @solana/web3.js Connection. Available when NETWORK=solana. */
-  connection: Connection;
+  connection!: Connection;
 
   readonly symbol = 'SOL';
   readonly decimals = 9; // 1 SOL = 10^9 lamports

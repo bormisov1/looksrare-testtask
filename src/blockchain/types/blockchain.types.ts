@@ -8,10 +8,10 @@ export interface WalletBalance {
 
 export interface Transaction {
   hash: string;
-  from: string;
-  to: string;
-  value: string;     // native token amount
-  timestamp: number; // unix timestamp in seconds
+  from: string | null;
+  to: string | null;
+  value: string | null;  // native token amount
+  timestamp: number;     // unix timestamp in seconds
   status?: 'success' | 'failed' | 'pending';
 }
 
@@ -29,7 +29,7 @@ export interface WatchedWallet {
 }
 
 export interface WatchedWalletWithBalance extends WatchedWallet {
-  balance: string;
+  balance: string | null;
   symbol: string;
 }
 

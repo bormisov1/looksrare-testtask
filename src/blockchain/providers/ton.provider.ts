@@ -23,7 +23,7 @@ export class TonProvider implements OnModuleInit {
   private readonly logger = new Logger(TonProvider.name);
 
   /** TonClient instance — available when NETWORK=ton. */
-  client: TonClient;
+  client!: TonClient;
 
   readonly symbol = 'TON';
   readonly decimals = 9; // 1 TON = 10^9 nanoTON

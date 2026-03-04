@@ -27,7 +27,7 @@ export class MetaplexProvider implements OnModuleInit {
   private readonly logger = new Logger(MetaplexProvider.name);
 
   /** Metaplex instance — available when NETWORK=solana. */
-  sdk: Metaplex;
+  sdk!: Metaplex;
 
   constructor(private readonly configService: ConfigService) {}
 
