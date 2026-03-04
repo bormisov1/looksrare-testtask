@@ -156,14 +156,14 @@ describe('WalletService.getTransactions', () => {
 
 
 describe('WalletService.watchWallet', () => {
-  it('stores wallet with label in Redis hash and returns success', async () => {
+  it('stores wallet with label in Redis hash and returns success with normalized address', async () => {
     const { service, redis } = await buildModule();
 
     const result = await service.watchWallet({ address: MOCK_EVM_ADDRESS, label: 'Vitalik' });
 
-    expect(result).toEqual({ success: true, address: MOCK_EVM_ADDRESS });
+    expect(result).toEqual({ success: true, address: lowerAddress });
     const stored = JSON.parse((redis.hset.mock.calls[0] as string[])[2]);
-    expect(stored).toMatchObject({ address: MOCK_EVM_ADDRESS, label: 'Vitalik' });
+    expect(stored).toMatchObject({ address: lowerAddress, label: 'Vitalik' });
     expect(stored.addedAt).toBeGreaterThan(0);
   });
 
@@ -173,6 +173,7 @@ describe('WalletService.watchWallet', () => {
     await service.watchWallet({ address: MOCK_EVM_ADDRESS });
 
     const stored = JSON.parse((redis.hset.mock.calls[0] as string[])[2]);
+    expect(stored.address).toBe(lowerAddress);
     expect(stored.label).toBeUndefined();
     expect(stored.addedAt).toBeGreaterThan(0);
   });
@@ -237,7 +238,7 @@ describe('WalletService.getWatchedWallets', () => {
 
     await service.getWatchedWallets();
 
-    expect(redis.set).toHaveBeenCalledWith(`last_balance:${lowerAddress}`, '1.500000');
+    expect(redis.set).toHaveBeenCalledWith(`last_balance:${MOCK_EVM_ADDRESS}`, '1.500000');
   });
 
   it('returns balance: null for wallets that fail, without affecting others', async () => {
@@ -282,73 +283,52 @@ describe('WalletService.getAlerts', () => {
 });
 
 
-describe('WalletService.getTokenBalances', () => {
-  it('returns parsed cache when cache hit', async () => {
-    const { service, redis } = await buildModule();
-    const tokens = [{ contractAddress: '0xtoken', name: 'USDC', symbol: 'USDC', decimals: 6, balance: '1.000000', network: 'ethereum' }];
-    redis.get.mockResolvedValue(JSON.stringify(tokens));
+describe.each([
+  {
+    method: 'getTokenBalances' as const,
+    cachePrefix: 'tokens',
+    ttl: 120,
+    cachedData: [{ contractAddress: '0xtoken', name: 'USDC', symbol: 'USDC', decimals: 6, balance: '1.000000', network: 'ethereum' }],
+    strategyData: [{ contractAddress: '0xusdc', name: 'USD Coin', symbol: 'USDC', decimals: 6, balance: '2.000000', network: 'ethereum' }],
+  },
+  {
+    method: 'getNfts' as const,
+    cachePrefix: 'nfts',
+    ttl: 300,
+    cachedData: [{ contractAddress: '0xnft', tokenId: '1', name: 'Punk', symbol: 'PUNK', network: 'ethereum' }],
+    strategyData: [{ contractAddress: '0xpunks', tokenId: '1234', name: 'CryptoPunks', symbol: 'PUNK', network: 'ethereum' }],
+  },
+])('WalletService.$method', ({ method, cachePrefix, ttl, cachedData, strategyData }) => {
+  it('returns parsed cache when cache hit and skips strategy', async () => {
+    const { service, redis, strategy } = await buildModule();
+    redis.get.mockResolvedValue(JSON.stringify(cachedData));
 
-    const result = await service.getTokenBalances(MOCK_EVM_ADDRESS);
+    const result = await service[method](MOCK_EVM_ADDRESS);
 
-    expect(result).toEqual(tokens);
+    expect(result).toEqual(cachedData);
+    expect(strategy[method]).not.toHaveBeenCalled();
   });
 
-  it('delegates to strategy on cache miss and stores with 120s TTL', async () => {
-    const tokens = [{ contractAddress: '0xusdc', name: 'USD Coin', symbol: 'USDC', decimals: 6, balance: '2.000000', network: 'ethereum' }];
+  it(`delegates to strategy on cache miss and stores with ${ttl}s TTL`, async () => {
     const { service, redis, strategy } = await buildModule({ network: 'ethereum' });
     redis.get.mockResolvedValue(null);
-    strategy.getTokenBalances.mockResolvedValue(tokens);
+    (strategy[method] as jest.Mock).mockResolvedValue(strategyData);
 
-    const result = await service.getTokenBalances(MOCK_EVM_ADDRESS);
+    const result = await service[method](MOCK_EVM_ADDRESS);
 
-    expect(strategy.getTokenBalances).toHaveBeenCalledWith(MOCK_EVM_ADDRESS);
-    expect(result).toEqual(tokens);
-    expect(redis.set).toHaveBeenCalledWith(`tokens:${lowerAddress}`, expect.any(String), 120);
+    expect(strategy[method]).toHaveBeenCalledWith(MOCK_EVM_ADDRESS);
+    expect(result).toEqual(strategyData);
+    expect(redis.set).toHaveBeenCalledWith(`${cachePrefix}:${lowerAddress}`, expect.any(String), ttl);
   });
 
   it('caches empty array returned by strategy', async () => {
     const { service, redis, strategy } = await buildModule();
     redis.get.mockResolvedValue(null);
-    strategy.getTokenBalances.mockResolvedValue([]);
+    (strategy[method] as jest.Mock).mockResolvedValue([]);
 
-    const result = await service.getTokenBalances(MOCK_EVM_ADDRESS);
-
-    expect(result).toEqual([]);
-    expect(redis.set).toHaveBeenCalledWith(`tokens:${lowerAddress}`, '[]', 120);
-  });
-});
-
-
-describe('WalletService.getNfts', () => {
-  it('returns parsed cache when cache hit', async () => {
-    const { service, redis } = await buildModule();
-    const nfts = [{ contractAddress: '0xnft', tokenId: '1', name: 'Punk', symbol: 'PUNK', network: 'ethereum' }];
-    redis.get.mockResolvedValue(JSON.stringify(nfts));
-
-    expect(await service.getNfts(MOCK_EVM_ADDRESS)).toEqual(nfts);
-  });
-
-  it('delegates to strategy on cache miss and stores with 300s TTL', async () => {
-    const nfts = [{ contractAddress: '0xpunks', tokenId: '1234', name: 'CryptoPunks', symbol: 'PUNK', network: 'ethereum' }];
-    const { service, redis, strategy } = await buildModule({ network: 'ethereum' });
-    redis.get.mockResolvedValue(null);
-    strategy.getNfts.mockResolvedValue(nfts);
-
-    const result = await service.getNfts(MOCK_EVM_ADDRESS);
-
-    expect(strategy.getNfts).toHaveBeenCalledWith(MOCK_EVM_ADDRESS);
-    expect(result).toEqual(nfts);
-    expect(redis.set).toHaveBeenCalledWith(`nfts:${lowerAddress}`, expect.any(String), 300);
-  });
-
-  it('caches empty array returned by strategy', async () => {
-    const { service, redis, strategy } = await buildModule();
-    redis.get.mockResolvedValue(null);
-    strategy.getNfts.mockResolvedValue([]);
-
-    const result = await service.getNfts(MOCK_EVM_ADDRESS);
+    const result = await service[method](MOCK_EVM_ADDRESS);
 
     expect(result).toEqual([]);
-    expect(redis.set).toHaveBeenCalledWith(`nfts:${lowerAddress}`, '[]', 300);
+    expect(redis.set).toHaveBeenCalledWith(`${cachePrefix}:${lowerAddress}`, '[]', ttl);
   });
 });
