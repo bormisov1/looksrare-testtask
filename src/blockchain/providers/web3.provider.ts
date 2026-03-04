@@ -33,9 +33,9 @@ export class Web3Provider implements OnModuleInit {
   private readonly logger = new Logger(Web3Provider.name);
 
   /** web3.js Web3 instance — available when the selected network is EVM. */
-  instance: Web3;
+  instance!: Web3;
 
-  network: string;
+  network!: string;
 
   constructor(private readonly configService: ConfigService) {}
 
