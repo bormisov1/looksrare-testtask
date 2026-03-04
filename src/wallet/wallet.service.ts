@@ -19,12 +19,18 @@ import { hasBalanceChanged } from '../utils/decimal.utils';
 import { BlockchainStrategy, BLOCKCHAIN_STRATEGY } from './strategies/blockchain-strategy.interface';
 import { ALERTS_KEY } from './constants';
 
+const EVM_NETWORKS = ['ethereum', 'bnb', 'polygon'];
+
+function normalizeAddress(address: string, network: string): string {
+  return EVM_NETWORKS.includes(network) ? address.toLowerCase() : address;
+}
+
 const CACHE_KEYS = {
-  balance: (address: string) => `balance:${address.toLowerCase()}`,
-  transactions: (address: string, limit: number) => `txs:${address.toLowerCase()}:${limit}`,
-  tokens: (address: string) => `tokens:${address.toLowerCase()}`,
-  nfts: (address: string) => `nfts:${address.toLowerCase()}`,
-  lastBalance: (address: string) => `last_balance:${address.toLowerCase()}`,
+  balance: (address: string) => `balance:${address}`,
+  transactions: (address: string, limit: number) => `txs:${address}:${limit}`,
+  tokens: (address: string) => `tokens:${address}`,
+  nfts: (address: string) => `nfts:${address}`,
+  lastBalance: (address: string) => `last_balance:${address}`,
   watchlist: 'watchlist',
 };
 
@@ -49,7 +55,8 @@ export class WalletService {
   }
 
   async getBalance(address: string): Promise<WalletBalance> {
-    const key = CACHE_KEYS.balance(address);
+    const normalized = normalizeAddress(address, this.network);
+    const key = CACHE_KEYS.balance(normalized);
     const cached = await this.redis.get(key);
     if (cached) {
       return { ...JSON.parse(cached), cached: true };
@@ -70,7 +77,8 @@ export class WalletService {
   }
 
   async getTransactions(address: string, limit = 10): Promise<TransactionList> {
-    const key = CACHE_KEYS.transactions(address, limit);
+    const normalized = normalizeAddress(address, this.network);
+    const key = CACHE_KEYS.transactions(normalized, limit);
     const cached = await this.redis.get(key);
     if (cached) {
       return { ...JSON.parse(cached), cached: true };
@@ -90,12 +98,13 @@ export class WalletService {
   }
 
   async watchWallet(dto: WatchWalletDto): Promise<{ success: boolean; address: string }> {
+    const normalizedAddress = normalizeAddress(dto.address, this.network);
     await this.redis.hset(
       CACHE_KEYS.watchlist,
-      dto.address,
-      JSON.stringify({ address: dto.address, label: dto.label, addedAt: Date.now() }),
+      normalizedAddress,
+      JSON.stringify({ address: normalizedAddress, label: dto.label, addedAt: Date.now() }),
     );
-    return { success: true, address: dto.address };
+    return { success: true, address: normalizedAddress };
   }
 
   async getWatchedWallets(): Promise<WatchedWalletWithBalance[]> {
@@ -135,7 +144,8 @@ export class WalletService {
   }
 
   async getTokenBalances(address: string): Promise<TokenBalance[]> {
-    const key = CACHE_KEYS.tokens(address);
+    const normalized = normalizeAddress(address, this.network);
+    const key = CACHE_KEYS.tokens(normalized);
     const cached = await this.redis.get(key);
     if (cached) return JSON.parse(cached);
 
@@ -145,7 +155,8 @@ export class WalletService {
   }
 
   async getNfts(address: string): Promise<NftItem[]> {
-    const key = CACHE_KEYS.nfts(address);
+    const normalized = normalizeAddress(address, this.network);
+    const key = CACHE_KEYS.nfts(normalized);
     const cached = await this.redis.get(key);
     if (cached) return JSON.parse(cached);
 
