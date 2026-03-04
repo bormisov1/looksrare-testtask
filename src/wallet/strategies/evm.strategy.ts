@@ -31,7 +31,7 @@ export class EvmStrategy implements BlockchainStrategy {
 
   async getBalance(address: string): Promise<{ balance: string; symbol: string }> {
     try {
-      const raw = await this.evm.provider.getBalance(address);
+      const raw = await this.evm.getBalance(address);
       return {
         balance: formatBalance(raw, this.evm.config.decimals),
         symbol: this.evm.config.symbol,
@@ -44,18 +44,14 @@ export class EvmStrategy implements BlockchainStrategy {
 
   async getTransactions(address: string, limit: number): Promise<Transaction[]> {
     try {
-      const { data } = await axios.get<EvmExplorerResponse>(this.evm.config.explorerApiUrl, {
-        timeout: 10_000,
-        params: {
-          chainid: this.evm.config.chainId,
-          module: 'account',
-          action: 'txlist',
-          address,
-          sort: 'desc',
-          page: 1,
-          offset: limit,
-          apikey: this.evm.explorerApiKey,
-        },
+      const data = await this.evm.explorerGet<EvmExplorerResponse>({
+        chainid: this.evm.config.chainId,
+        module: 'account',
+        action: 'txlist',
+        address,
+        sort: 'desc',
+        page: 1,
+        offset: limit,
       });
 
       if (data.status === '1' && Array.isArray(data.result)) {
@@ -101,14 +97,6 @@ export class EvmStrategy implements BlockchainStrategy {
       }));
     } catch (err) {
       this.logger.error((err as Error).message, (err as Error).stack);
-      if (axios.isAxiosError(err)) {
-        if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-          throw new GatewayTimeoutException('Moralis request timed out');
-        }
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          throw new ServiceUnavailableException('Moralis API key rejected');
-        }
-      }
       throw new BadGatewayException('Failed to fetch token balances from Moralis');
     }
   }
@@ -130,14 +118,6 @@ export class EvmStrategy implements BlockchainStrategy {
       }));
     } catch (err) {
       this.logger.error((err as Error).message, (err as Error).stack);
-      if (axios.isAxiosError(err)) {
-        if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-          throw new GatewayTimeoutException('Moralis request timed out');
-        }
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          throw new ServiceUnavailableException('Moralis API key rejected');
-        }
-      }
       throw new BadGatewayException('Failed to fetch NFTs');
     }
   }

@@ -1,6 +1,5 @@
-import axios from 'axios';
-import { BadGatewayException, GatewayTimeoutException, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { PublicKey } from '@solana/web3.js';
+import { BadGatewayException, Logger } from '@nestjs/common';
+import { PublicKey, ParsedInstruction } from '@solana/web3.js';
 import { Metadata, Nft, Sft } from '@metaplex-foundation/js';
 import { SolanaProvider } from '../../blockchain/providers/solana.provider';
 import { MoralisProvider } from '../../blockchain/providers/moralis.provider';
@@ -30,7 +29,7 @@ export class SolanaStrategy implements BlockchainStrategy {
   async getBalance(address: string): Promise<{ balance: string; symbol: string }> {
     try {
       const pk = new PublicKey(address);
-      const raw = await this.sol.connection.getBalance(pk);
+      const raw = await this.sol.getBalance(pk);
       return {
         balance: formatBalance(raw, this.sol.decimals),
         symbol: this.sol.symbol,
@@ -44,15 +43,56 @@ export class SolanaStrategy implements BlockchainStrategy {
   async getTransactions(address: string, limit: number): Promise<Transaction[]> {
     try {
       const pk = new PublicKey(address);
-      const signatures = await this.sol.connection.getSignaturesForAddress(pk, { limit });
-      return signatures.map((sig): Transaction => ({
-        hash: sig.signature,
-        from: address,
-        to: null,
-        value: null,
-        timestamp: sig.blockTime ?? 0,
-        status: sig.err ? 'failed' : 'success',
-      }));
+      const signatures = await this.sol.getSignaturesForAddress(pk, { limit });
+
+      const parsed = await this.sol.getParsedTransactions(
+        signatures.map((s) => s.signature),
+      );
+
+      return signatures.map((sig, i): Transaction => {
+        const tx = parsed[i];
+        let to: string | null = null;
+        let value: string | null = null;
+
+        if (tx) {
+          const instructions = tx.transaction.message.instructions;
+          for (const ix of instructions) {
+            if ('parsed' in ix) {
+              const pix = ix as ParsedInstruction;
+              if (
+                pix.program === 'system' &&
+                pix.parsed?.type === 'transfer'
+              ) {
+                to = pix.parsed.info.destination ?? null;
+                value = formatBalance(
+                  pix.parsed.info.lamports ?? 0,
+                  this.sol.decimals,
+                );
+                break;
+              }
+              if (
+                pix.program === 'spl-token' &&
+                (pix.parsed?.type === 'transfer' || pix.parsed?.type === 'transferChecked')
+              ) {
+                to = pix.parsed.info.destination ?? null;
+                const decimals = pix.parsed.info.tokenAmount?.decimals ?? 0;
+                const amount = pix.parsed.info.tokenAmount?.amount ?? pix.parsed.info.amount ?? '0';
+                value = formatBalance(amount, decimals);
+                break;
+              }
+            }
+          }
+        }
+
+        return {
+          hash: sig.signature,
+          from: address,
+          to,
+          value,
+          timestamp: sig.blockTime ?? 0,
+          status: sig.err ? 'failed' : 'success',
+        };
+      });
     } catch (err) {
       this.logger.error((err as Error).message, (err as Error).stack);
       throw new BadGatewayException(`Failed to fetch transactions from ${this.network}`);
@@ -74,14 +114,6 @@ export class SolanaStrategy implements BlockchainStrategy {
       }));
     } catch (err) {
       this.logger.error((err as Error).message, (err as Error).stack);
-      if (axios.isAxiosError(err)) {
-        if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-          throw new GatewayTimeoutException('Moralis request timed out');
-        }
-        if (err.response?.status === 401 || err.response?.status === 403) {
-          throw new ServiceUnavailableException('Moralis API key rejected');
-        }
-      }
       throw new BadGatewayException('Failed to fetch token balances from Moralis');
     }
   }

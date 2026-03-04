@@ -19,7 +19,7 @@ export class TonStrategy implements BlockchainStrategy {
   async getBalance(address: string): Promise<{ balance: string; symbol: string }> {
     try {
       const addr = this.ton.parseAddress(address);
-      const raw = await this.ton.client.getBalance(addr);
+      const raw = await this.ton.getBalance(addr);
       return {
         balance: formatBalance(raw, this.ton.decimals),
         symbol: this.ton.symbol,
@@ -33,7 +33,7 @@ export class TonStrategy implements BlockchainStrategy {
   async getTransactions(address: string, limit: number): Promise<Transaction[]> {
     try {
       const addr = this.ton.parseAddress(address);
-      const rawTxs = await this.ton.client.getTransactions(addr, { limit });
+      const rawTxs = await this.ton.getTransactions(addr, { limit });
       return rawTxs.map((tx): Transaction => {
         const inMsg = tx.inMessage;
         const from =
