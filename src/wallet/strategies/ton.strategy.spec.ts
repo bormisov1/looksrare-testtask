@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import { BadGatewayException, GatewayTimeoutException, ServiceUnavailableException } from '@nestjs/common';
 import { TonStrategy } from './ton.strategy';
+import { makeTonProvider as makeTon } from './test-helpers';
 
 jest.mock('axios', () => {
   const actual = jest.requireActual<typeof import('axios')>('axios');
@@ -14,34 +15,21 @@ jest.mock('axios', () => {
 const MOCK_TON_ADDRESS = 'EQDtFpEwcFAEcRe5mLVh2N6C0x-_hJEM7W61_JLnSF74p4q2';
 const NETWORK = 'ton';
 
-function makeTon(overrides: Record<string, unknown> = {}) {
-  return {
-    client: {
-      getBalance: jest.fn().mockResolvedValue(1500000000n),
-      getTransactions: jest.fn().mockResolvedValue([]),
-    },
-    parseAddress: jest.fn().mockReturnValue('parsed-ton-addr'),
-    symbol: 'TON',
-    decimals: 9,
-    ...overrides,
-  };
-}
-
 
 describe('TonStrategy.getBalance', () => {
-  it('fetches from client, converts nanoTON to TON', async () => {
+  it('fetches from provider, converts nanoTON to TON', async () => {
     const ton = makeTon();
     const strategy = new TonStrategy(NETWORK, ton as any);
 
     const result = await strategy.getBalance(MOCK_TON_ADDRESS);
 
     expect(ton.parseAddress).toHaveBeenCalledWith(MOCK_TON_ADDRESS);
-    expect(ton.client.getBalance).toHaveBeenCalledWith('parsed-ton-addr');
+    expect(ton.getBalance).toHaveBeenCalledWith('parsed-ton-addr');
     expect(result).toEqual({ balance: '1.500000', symbol: 'TON' });
   });
 
   it('throws BadGatewayException on client failure', async () => {
-    const ton = makeTon({ client: { getBalance: jest.fn().mockRejectedValue(new Error('rpc error')), getTransactions: jest.fn() } });
+    const ton = makeTon({ getBalance: jest.fn().mockRejectedValue(new Error('rpc error')) });
     const strategy = new TonStrategy(NETWORK, ton as any);
 
     await expect(strategy.getBalance(MOCK_TON_ADDRESS)).rejects.toThrow(BadGatewayException);
@@ -72,12 +60,12 @@ describe('TonStrategy.getTransactions', () => {
       },
       description: { aborted: false },
     };
-    const ton = makeTon({ client: { getBalance: jest.fn(), getTransactions: jest.fn().mockResolvedValue([rawTx]) } });
+    const ton = makeTon({ getTransactions: jest.fn().mockResolvedValue([rawTx]) });
     const strategy = new TonStrategy(NETWORK, ton as any);
 
     const result = await strategy.getTransactions(MOCK_TON_ADDRESS, 5);
 
-    expect(ton.client.getTransactions).toHaveBeenCalledWith('parsed-ton-addr', { limit: 5 });
+    expect(ton.getTransactions).toHaveBeenCalledWith('parsed-ton-addr', { limit: 5 });
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       hash: mockHash.toString('hex'),
@@ -96,7 +84,7 @@ describe('TonStrategy.getTransactions', () => {
       inMessage: { info: { type: 'external-in' } },
       description: { aborted: false },
     };
-    const ton = makeTon({ client: { getBalance: jest.fn(), getTransactions: jest.fn().mockResolvedValue([rawTx]) } });
+    const ton = makeTon({ getTransactions: jest.fn().mockResolvedValue([rawTx]) });
     const strategy = new TonStrategy(NETWORK, ton as any);
 
     const result = await strategy.getTransactions(MOCK_TON_ADDRESS, 1);
@@ -112,7 +100,7 @@ describe('TonStrategy.getTransactions', () => {
       inMessage: null,
       description: { type: 'generic', aborted: true },
     };
-    const ton = makeTon({ client: { getBalance: jest.fn(), getTransactions: jest.fn().mockResolvedValue([rawTx]) } });
+    const ton = makeTon({ getTransactions: jest.fn().mockResolvedValue([rawTx]) });
     const strategy = new TonStrategy(NETWORK, ton as any);
 
     const result = await strategy.getTransactions(MOCK_TON_ADDRESS, 1);

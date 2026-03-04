@@ -1,61 +1,24 @@
-import axios, { AxiosError } from 'axios';
-import { BadGatewayException, GatewayTimeoutException, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException } from '@nestjs/common';
 import { SolanaStrategy } from './solana.strategy';
-
-jest.mock('axios', () => {
-  const actual = jest.requireActual<typeof import('axios')>('axios');
-  return {
-    __esModule: true,
-    ...actual,
-    default: { ...actual.default, get: jest.fn(), isAxiosError: actual.default.isAxiosError },
-  };
-});
+import { makeSolProvider as makeSol, makeMoralisProvider as makeMoralis, makeMetaplexProvider as makeMetaplex } from './test-helpers';
 
 const MOCK_SOL_ADDRESS = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
 const NETWORK = 'solana';
 
-function makeSol(overrides: Record<string, unknown> = {}) {
-  return {
-    connection: {
-      getBalance: jest.fn().mockResolvedValue(1500000000),
-      getSignaturesForAddress: jest.fn().mockResolvedValue([]),
-    },
-    symbol: 'SOL',
-    decimals: 9,
-    ...overrides,
-  };
-}
-
-function makeMoralis(overrides: Record<string, unknown> = {}) {
-  return {
-    isAvailable: jest.fn().mockReturnValue(false),
-    sdk: {},
-    ...overrides,
-  };
-}
-
-function makeMetaplex(overrides: Record<string, unknown> = {}) {
-  return {
-    isAvailable: jest.fn().mockReturnValue(false),
-    sdk: {},
-    ...overrides,
-  };
-}
-
 
 describe('SolanaStrategy.getBalance', () => {
-  it('fetches from connection, converts lamports to SOL', async () => {
+  it('fetches from provider, converts lamports to SOL', async () => {
     const sol = makeSol();
     const strategy = new SolanaStrategy(NETWORK, sol as any, makeMoralis() as any, makeMetaplex() as any);
 
     const result = await strategy.getBalance(MOCK_SOL_ADDRESS);
 
-    expect(sol.connection.getBalance).toHaveBeenCalled();
+    expect(sol.getBalance).toHaveBeenCalled();
     expect(result).toEqual({ balance: '1.500000', symbol: 'SOL' });
   });
 
   it('throws BadGatewayException on connection failure', async () => {
-    const sol = makeSol({ connection: { getBalance: jest.fn().mockRejectedValue(new Error('rpc error')), getSignaturesForAddress: jest.fn() } });
+    const sol = makeSol({ getBalance: jest.fn().mockRejectedValue(new Error('rpc error')) });
     const strategy = new SolanaStrategy(NETWORK, sol as any, makeMoralis() as any, makeMetaplex() as any);
 
     await expect(strategy.getBalance(MOCK_SOL_ADDRESS)).rejects.toThrow(BadGatewayException);
@@ -64,20 +27,104 @@ describe('SolanaStrategy.getBalance', () => {
 
 
 describe('SolanaStrategy.getTransactions', () => {
-  it('fetches signatures and maps them to transactions', async () => {
+  it('fetches signatures and parsed transactions, extracts transfer details', async () => {
     const sol = makeSol();
-    (sol.connection.getSignaturesForAddress as jest.Mock).mockResolvedValue([
+    (sol.getSignaturesForAddress as jest.Mock).mockResolvedValue([
       { signature: 'sig123abc', blockTime: 1700000000, err: null },
       { signature: 'sig456def', blockTime: 1700000001, err: { msg: 'error' } },
+    ]);
+    (sol.getParsedTransactions as jest.Mock).mockResolvedValue([
+      {
+        transaction: {
+          message: {
+            instructions: [
+              {
+                parsed: { type: 'transfer', info: { destination: 'destAddr', lamports: 500000000 } },
+                program: 'system',
+              },
+            ],
+          },
+        },
+      },
+      null,
     ]);
     const strategy = new SolanaStrategy(NETWORK, sol as any, makeMoralis() as any, makeMetaplex() as any);
 
     const result = await strategy.getTransactions(MOCK_SOL_ADDRESS, 2);
 
-    expect(sol.connection.getSignaturesForAddress).toHaveBeenCalledWith(expect.anything(), { limit: 2 });
+    expect(sol.getSignaturesForAddress).toHaveBeenCalledWith(expect.anything(), { limit: 2 });
+    expect(sol.getParsedTransactions).toHaveBeenCalledWith(['sig123abc', 'sig456def']);
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ hash: 'sig123abc', timestamp: 1700000000, status: 'success' });
-    expect(result[1]).toMatchObject({ hash: 'sig456def', status: 'failed' });
+    expect(result[0]).toMatchObject({
+      hash: 'sig123abc',
+      from: MOCK_SOL_ADDRESS,
+      to: 'destAddr',
+      value: '0.500000',
+      timestamp: 1700000000,
+      status: 'success',
+    });
+    expect(result[1]).toMatchObject({ hash: 'sig456def', to: null, value: null, status: 'failed' });
+  });
+
+  it('parses spl-token transfer instructions', async () => {
+    const sol = makeSol();
+    (sol.getSignaturesForAddress as jest.Mock).mockResolvedValue([
+      { signature: 'sigSpl', blockTime: 1700000000, err: null },
+    ]);
+    (sol.getParsedTransactions as jest.Mock).mockResolvedValue([
+      {
+        transaction: {
+          message: {
+            instructions: [
+              {
+                parsed: {
+                  type: 'transferChecked',
+                  info: {
+                    destination: 'tokenDestAddr',
+                    tokenAmount: { amount: '6000000', decimals: 6 },
+                  },
+                },
+                program: 'spl-token',
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    const strategy = new SolanaStrategy(NETWORK, sol as any, makeMoralis() as any, makeMetaplex() as any);
+
+    const result = await strategy.getTransactions(MOCK_SOL_ADDRESS, 1);
+
+    expect(result[0]).toMatchObject({
+      hash: 'sigSpl',
+      to: 'tokenDestAddr',
+      value: '6.000000',
+      status: 'success',
+    });
+  });
+
+  it('returns null to/value for non-transfer transactions', async () => {
+    const sol = makeSol();
+    (sol.getSignaturesForAddress as jest.Mock).mockResolvedValue([
+      { signature: 'sigDefi', blockTime: 1700000000, err: null },
+    ]);
+    (sol.getParsedTransactions as jest.Mock).mockResolvedValue([
+      {
+        transaction: {
+          message: {
+            instructions: [
+              { parsed: { type: 'allocate', info: {} }, program: 'system' },
+            ],
+          },
+        },
+      },
+    ]);
+    const strategy = new SolanaStrategy(NETWORK, sol as any, makeMoralis() as any, makeMetaplex() as any);
+
+    const result = await strategy.getTransactions(MOCK_SOL_ADDRESS, 1);
+
+    expect(result[0].to).toBeNull();
+    expect(result[0].value).toBeNull();
   });
 });
 
@@ -108,26 +155,15 @@ describe('SolanaStrategy.getTokenBalances', () => {
     expect(result[0]).toMatchObject({ contractAddress: 'spl-mint', symbol: 'USDC', balance: '3.000000', network: NETWORK });
   });
 
-  it('throws GatewayTimeoutException on timeout', async () => {
-    const getSPL = jest.fn().mockRejectedValue(new AxiosError('timeout', 'ECONNABORTED'));
+  it('throws BadGatewayException on Moralis SDK failure', async () => {
+    const getSPL = jest.fn().mockRejectedValue(new Error('Moralis SDK error'));
     const moralis = makeMoralis({
       isAvailable: jest.fn().mockReturnValue(true),
       sdk: { SolApi: { account: { getSPL } } },
     });
     const strategy = new SolanaStrategy(NETWORK, makeSol() as any, moralis as any, makeMetaplex() as any);
 
-    await expect(strategy.getTokenBalances(MOCK_SOL_ADDRESS)).rejects.toThrow(GatewayTimeoutException);
-  });
-
-  it('throws ServiceUnavailableException on 401/403', async () => {
-    const getSPL = jest.fn().mockRejectedValue(new AxiosError('forbidden', 'ERR_BAD_REQUEST', undefined, undefined, { status: 403 } as any));
-    const moralis = makeMoralis({
-      isAvailable: jest.fn().mockReturnValue(true),
-      sdk: { SolApi: { account: { getSPL } } },
-    });
-    const strategy = new SolanaStrategy(NETWORK, makeSol() as any, moralis as any, makeMetaplex() as any);
-
-    await expect(strategy.getTokenBalances(MOCK_SOL_ADDRESS)).rejects.toThrow(ServiceUnavailableException);
+    await expect(strategy.getTokenBalances(MOCK_SOL_ADDRESS)).rejects.toThrow(BadGatewayException);
   });
 });
 
