@@ -4,13 +4,13 @@ import { IsWalletAddress } from '../../utils/validators/is-wallet-address.valida
 
 export class WatchWalletDto {
   @ApiProperty({
-    description: 'Wallet address (EVM: 0x... | Solana: base58)',
+    description: 'Wallet address (EVM: 0x... | Solana: base58 | TON: UQ...)',
     example: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
   })
   @IsNotEmpty()
   @IsString()
   @IsWalletAddress()
-  address: string;
+  address!: string;
 
   @ApiPropertyOptional({
     description: 'Optional human-readable label',

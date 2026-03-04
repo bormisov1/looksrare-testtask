@@ -41,7 +41,7 @@ export class WalletController {
     @Param('address') address: string,
     @Query() query: GetTransactionsDto,
   ) {
-    return this.walletService.getTransactions(address, Number(query.limit) || 10);
+    return this.walletService.getTransactions(address, query.limit);
   }
 
   @ApiOperation({ summary: 'Get ERC-20 / SPL token balances (requires MORALIS_API_KEY)' })

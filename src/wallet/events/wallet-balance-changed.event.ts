@@ -2,7 +2,7 @@
 export const WALLET_BALANCE_CHANGED = 'wallet.balance.changed';
 
 /** Payload emitted when a watched wallet's balance changes */
-export class WalletBalanceChangedEvent {
+export interface WalletBalanceChangedEvent {
   address: string;
   network: string;
   symbol: string;
